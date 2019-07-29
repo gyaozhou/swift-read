@@ -1184,6 +1184,7 @@ class ObjectController(BaseStorageServer):
     def SSYNC(self, request):
         return Response(app_iter=ssync_receiver.Receiver(self, request)())
 
+    # zhou: 
     def __call__(self, env, start_response):
         """WSGI Application entry point for the Swift Object Server."""
         start_time = time.time()

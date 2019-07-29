@@ -415,6 +415,7 @@ class Application(object):
             return AccountController, d
         return None, d
 
+    # zhou: 
     def __call__(self, env, start_response):
         """
         WSGI entry point.
@@ -443,6 +444,7 @@ class Application(object):
             req.headers['x-auth-token'] = req.headers['x-storage-token']
         return req
 
+    # zhou: 
     def handle_request(self, req):
         """
         Entry point for proxy server.
@@ -467,6 +469,7 @@ class Application(object):
                 return HTTPPreconditionFailed(
                     request=req, body='Invalid UTF8 or contains NULL')
 
+            # zhou: 
             try:
                 controller, path_parts = self.get_controller(req)
             except APIVersionError:

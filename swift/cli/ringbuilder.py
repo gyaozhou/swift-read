@@ -49,7 +49,9 @@ EXIT_SUCCESS = 0
 EXIT_WARNING = 1
 EXIT_ERROR = 2
 
+# zhou: not a good practise.
 global argv, backup_dir, builder, builder_file, ring_file
+
 argv = backup_dir = builder = builder_file = ring_file = None
 
 
@@ -427,11 +429,13 @@ def _make_display_device_table(builder):
 
 
 class Commands(object):
+    
     @staticmethod
     def unknown():
         print('Unknown command: %s' % argv[2])
         exit(EXIT_ERROR)
 
+    # zhou: core function, create ring
     @staticmethod
     def create():
         """
@@ -444,6 +448,7 @@ swift-ring-builder <builder_file> create <part_power> <replicas>
         if len(argv) < 6:
             print(Commands.create.__doc__.strip())
             exit(EXIT_ERROR)
+            
         builder = RingBuilder(int(argv[3]), float(argv[4]), int(argv[5]))
         backup_dir = pathjoin(dirname(builder_file), 'backups')
         try:
@@ -651,6 +656,7 @@ swift-ring-builder <builder_file> list_parts
             print('%9d   %7d' % (partition, count))
         exit(EXIT_SUCCESS)
 
+    # zhou: add storage node to ring.
     @staticmethod
     def add():
         """
@@ -696,6 +702,7 @@ swift-ring-builder <builder_file> add
                                dev['port'], dev['device']))
                         print("The on-disk ring builder is unchanged.\n")
                         exit(EXIT_ERROR)
+                # zhou: 
                 dev_id = builder.add_dev(new_dev)
                 print('Device %s with %s weight got id %s' %
                       (format_device(new_dev), new_dev['weight'], dev_id))
@@ -861,6 +868,7 @@ swift-ring-builder <builder_file> remove
         builder.save(builder_file)
         exit(EXIT_SUCCESS)
 
+    # zhou: apply builder file, generate *.ring.gz
     @staticmethod
     def rebalance():
         """
@@ -1454,11 +1462,15 @@ def main(arguments=None):
     else:
         argv = sys_argv
 
+    # zhou: missing arguments, show help.
     if len(argv) < 2:
+        # zhou: show default help firstly
         print("swift-ring-builder %(MAJOR_VERSION)s.%(MINOR_VERSION)s\n" %
               globals())
         print(Commands.default.__doc__.strip())
-        print()
+        print()p
+
+        # zhou: show other commands' help in order.
         cmds = [c for c in dir(Commands)
                 if getattr(Commands, c).__doc__ and not c.startswith('_') and
                 c != 'default']
@@ -1468,6 +1480,7 @@ def main(arguments=None):
             print()
         print(parse_search_value.__doc__.strip())
         print()
+        
         for line in wrap(' '.join(cmds), 79, initial_indent='Quick list: ',
                          subsequent_indent='            '):
             print(line)
@@ -1476,6 +1489,8 @@ def main(arguments=None):
               '            2 = error')
         exit(EXIT_SUCCESS)
 
+    # zhou: argv[1] should be one of these,
+    #     "account.builder, container.builder, object.builder"
     builder_file, ring_file = parse_builder_ring_filename_args(argv)
     if builder_file != argv[1]:
         print('Note: using %s instead of %s as builder file' % (
@@ -1501,6 +1516,7 @@ def main(arguments=None):
               (builder_file, e))
         exit(EXIT_ERROR)
 
+        
     backup_dir = pathjoin(dirname(builder_file), 'backups')
     try:
         mkdir(backup_dir)
@@ -1512,6 +1528,8 @@ def main(arguments=None):
         command = "default"
     else:
         command = argv[2]
+
+        
     if argv[0].endswith('-safe'):
         try:
             with lock_parent_directory(abspath(builder_file), 15):

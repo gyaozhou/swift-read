@@ -67,6 +67,7 @@ def _set_random_seed(seed):
             random.setstate(random_state)
 
 
+# zhou: 
 class RingBuilder(object):
     """
     Used to build swift.common.ring.RingData instances to be written to disk
@@ -373,6 +374,8 @@ class RingBuilder(object):
                              self.next_part_power)
         return self._ring
 
+    # zhou: python has no definition for structure, so this practise is good for
+    #       understanding.
     def add_dev(self, dev):
         """
         Add a device to the ring. This device dict should have a minimum of the
@@ -466,6 +469,7 @@ class RingBuilder(object):
         self.devs_changed = True
         self.version += 1
 
+        # zhou: 
     def rebalance(self, seed=None):
         """
         Rebalance the ring.
@@ -509,6 +513,7 @@ class RingBuilder(object):
         self._update_last_part_moves()
 
         with _set_random_seed(seed):
+            # zhou: 
             replica_plan = self._build_replica_plan()
             self._set_parts_wanted(replica_plan)
 

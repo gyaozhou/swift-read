@@ -532,7 +532,7 @@ class SwiftHttpProxiedProtocol(SwiftHttpProtocol):
                 environ['HTTPS'] = 'on'
         return environ
 
-
+# zhou: 
 def run_server(conf, logger, sock, global_conf=None):
     # Ensure TZ environment variable exists to avoid stat('/etc/localtime') on
     # some platforms. This locks in reported times to UTC.
@@ -1053,6 +1053,7 @@ def run_wsgi(conf_path, app_section, *args, **kwargs):
 
     no_fork_sock = strategy.no_fork_sock()
     if no_fork_sock:
+        # zhou: 
         run_server(conf, logger, no_fork_sock, global_conf=global_conf)
         return 0
 

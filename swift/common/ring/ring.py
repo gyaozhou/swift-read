@@ -178,6 +178,7 @@ class RingData(object):
                 'next_part_power': self.next_part_power}
 
 
+# zhou:     
 class Ring(object):
     """
     Partitioned consistent hashing ring.
@@ -270,6 +271,7 @@ class Ring(object):
     def next_part_power(self):
         return self._next_part_power
 
+    # zhou:
     @property
     def part_power(self):
         return 32 - self._part_shift
@@ -316,6 +318,7 @@ class Ring(object):
         """
         return getmtime(self.serialized_path) != self._mtime
 
+    # zhou: 
     def _get_part_nodes(self, part):
         part_nodes = []
         seen_ids = set()
@@ -327,6 +330,7 @@ class Ring(object):
                     seen_ids.add(dev_id)
         return [dict(node, index=i) for i, node in enumerate(part_nodes)]
 
+    # zhou: 
     def get_part(self, account, container=None, obj=None):
         """
         Get the partition for an account/container/object.
@@ -358,6 +362,7 @@ class Ring(object):
             self._reload()
         return self._get_part_nodes(part)
 
+    # zhou: Ring._devs
     def get_nodes(self, account, container=None, obj=None):
         """
         Get the partition and nodes for an account/container/object.
