@@ -49,7 +49,7 @@ EXIT_SUCCESS = 0
 EXIT_WARNING = 1
 EXIT_ERROR = 2
 
-# zhou: not a good practise.
+# zhou: 
 global argv, backup_dir, builder, builder_file, ring_file
 
 argv = backup_dir = builder = builder_file = ring_file = None
@@ -167,6 +167,7 @@ def _parse_add_values(argvish):
                              'Defaulting to region 1.\n' % devstr)
                 dev_dict['region'] = 1
 
+            # zhou: used to accept repliacation data?
             if dev_dict['replication_ip'] is None:
                 dev_dict['replication_ip'] = dev_dict['ip']
 
@@ -446,16 +447,23 @@ swift-ring-builder <builder_file> create <part_power> <replicas>
     than once.
         """
         if len(argv) < 6:
+            # zhou: strip([chars]), return a copy of the string with the leading
+            #       and trailing characters removed.
             print(Commands.create.__doc__.strip())
             exit(EXIT_ERROR)
-            
+
+        # zhou: "part_power", "replicas", "min_part_hours", almost do nothing in __init__()
         builder = RingBuilder(int(argv[3]), float(argv[4]), int(argv[5]))
+        # zhou: pathjoin == os.path.join, dirname == os.path.dirname
         backup_dir = pathjoin(dirname(builder_file), 'backups')
         try:
             mkdir(backup_dir)
         except OSError as err:
+            # zhou: only directory already exist is acceptable.
             if err.errno != EEXIST:
                 raise
+
+        # zhou: two copies stored in disk.
         builder.save(pathjoin(backup_dir,
                               '%d.' % time() + basename(builder_file)))
         builder.save(builder_file)
@@ -691,6 +699,7 @@ swift-ring-builder <builder_file> add
 
         try:
             for new_dev in _parse_add_values(argv[3:]):
+                # zhou: where "builder.devs" comes from ???
                 for dev in builder.devs:
                     if dev is None:
                         continue
@@ -700,8 +709,10 @@ swift-ring-builder <builder_file> add
                         print('Device %d already uses %s:%d/%s.' %
                               (dev['id'], dev['ip'],
                                dev['port'], dev['device']))
+                        # zhou: the device already been added.
                         print("The on-disk ring builder is unchanged.\n")
                         exit(EXIT_ERROR)
+                        
                 # zhou: 
                 dev_id = builder.add_dev(new_dev)
                 print('Device %s with %s weight got id %s' %
@@ -911,6 +922,7 @@ swift-ring-builder <builder_file> rebalance [options]
         devs_changed = builder.devs_changed
         min_part_seconds_left = builder.min_part_seconds_left
         try:
+            # zhou: 
             last_balance = builder.get_balance()
             last_dispersion = builder.dispersion
             parts, balance, removed_devs = builder.rebalance(seed=get_seed(3))
@@ -924,6 +936,7 @@ swift-ring-builder <builder_file> rebalance [options]
                   (e,))
             print('-' * 79)
             exit(EXIT_ERROR)
+            
         if not (parts or options.force or removed_devs):
             print('No partitions could be reassigned.')
             if min_part_seconds_left > 0:
@@ -934,6 +947,7 @@ swift-ring-builder <builder_file> rebalance [options]
             else:
                 print('There is no need to do so at this time')
             exit(EXIT_WARNING)
+            
         # If we set device's weight to zero, currently balance will be set
         # special value(MAX_BALANCE) until zero weighted device return all
         # its partitions. So we cannot check balance has changed.
@@ -1497,7 +1511,9 @@ def main(arguments=None):
               builder_file, argv[1]))
 
     try:
+        # zhou: load file for each CLI execution.
         builder = RingBuilder.load(builder_file)
+        
     except exceptions.UnPicklingError as e:
         msg = str(e)
         try:

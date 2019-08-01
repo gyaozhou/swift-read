@@ -29,9 +29,13 @@ def tiers_for_dev(dev):
 
     :returns: tuple of tiers
     """
+    # zhou: Site
     t1 = dev['region']
+    # zhou: Rack 
     t2 = dev['zone']
+    # zhou: Server
     t3 = dev['ip']
+    # zhou: Device
     t4 = dev['id']
 
     return ((t1,),

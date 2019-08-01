@@ -392,7 +392,7 @@ def _add_pipeline_properties(app, *names):
             setattr(app.__class__, property_name,
                     pipeline_property(property_name))
 
-
+# zhou: README,
 def loadapp(conf_file, global_conf=None, allow_modify_pipeline=True):
     """
     Loads a context from a config file, and if the context is a pipeline
@@ -532,7 +532,7 @@ class SwiftHttpProxiedProtocol(SwiftHttpProtocol):
                 environ['HTTPS'] = 'on'
         return environ
 
-# zhou: 
+# zhou: README,
 def run_server(conf, logger, sock, global_conf=None):
     # Ensure TZ environment variable exists to avoid stat('/etc/localtime') on
     # some platforms. This locks in reported times to UTC.

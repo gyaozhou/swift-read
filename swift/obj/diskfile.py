@@ -1969,6 +1969,7 @@ class BaseDiskFileReader(object):
     def can_zero_copy_send(self):
         return self._use_splice
 
+    # zhou: README,
     def zero_copy_send(self, wsockfd):
         """
         Does some magic with splice() and tee() to move stuff from disk to
@@ -2022,6 +2023,7 @@ class BaseDiskFileReader(object):
                     raise Exception("tee() failed: tried to move %d bytes, "
                                     "but only moved %d" %
                                     (bytes_in_pipe, bytes_copied))
+                
                 # Take the data and feed it into an in-kernel MD5 socket. The
                 # MD5 socket hashes data that is written to it. Reading from
                 # it yields the MD5 checksum of the written data.

@@ -1334,7 +1334,7 @@ class GetOrHeadHandler(ResumingGetter):
                 res.content_type = source.getheader('Content-Type')
         return res
 
-
+# zhou: README,
 class NodeIter(object):
     """
     Yields nodes for a ring partition, skipping over error

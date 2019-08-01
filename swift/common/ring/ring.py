@@ -318,7 +318,7 @@ class Ring(object):
         """
         return getmtime(self.serialized_path) != self._mtime
 
-    # zhou: 
+    # zhou: README,
     def _get_part_nodes(self, part):
         part_nodes = []
         seen_ids = set()
@@ -330,7 +330,7 @@ class Ring(object):
                     seen_ids.add(dev_id)
         return [dict(node, index=i) for i, node in enumerate(part_nodes)]
 
-    # zhou: 
+    # zhou: README,
     def get_part(self, account, container=None, obj=None):
         """
         Get the partition for an account/container/object.
@@ -362,7 +362,7 @@ class Ring(object):
             self._reload()
         return self._get_part_nodes(part)
 
-    # zhou: Ring._devs
+    # zhou: README, Ring._devs
     def get_nodes(self, account, container=None, obj=None):
         """
         Get the partition and nodes for an account/container/object.

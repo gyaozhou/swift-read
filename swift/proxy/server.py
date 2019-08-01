@@ -359,6 +359,7 @@ class Application(object):
                     {'label': _label_for_policy(policy),
                      'method': options.sorting_method})
 
+    # zhou: README,
     def get_object_ring(self, policy_idx):
         """
         Get the ring object to use to handle a request based on its policy.
@@ -636,6 +637,7 @@ class Application(object):
                           {'msg': msg, 'ip': node['ip'],
                           'port': node['port'], 'device': node['device']})
 
+    # zhou: README,
     def iter_nodes(self, ring, partition, node_iter=None, policy=None):
         return NodeIter(self, ring, partition, node_iter=node_iter,
                         policy=policy)

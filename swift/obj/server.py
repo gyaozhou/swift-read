@@ -1223,6 +1223,8 @@ class ObjectController(BaseStorageServer):
             if slow > 0:
                 sleep(slow)
 
+        # zhou: README,
+                
         # To be able to zero-copy send the object, we need a few things.
         # First, we have to be responding successfully to a GET, or else we're
         # not sending the object. Second, we have to be able to extract the
@@ -1234,6 +1236,7 @@ class ObjectController(BaseStorageServer):
         # there.
         if req.method == 'GET' and res.status_int == 200 and \
            isinstance(env['wsgi.input'], wsgi.Input):
+            
             app_iter = getattr(res, 'app_iter', None)
             checker = getattr(app_iter, 'can_zero_copy_send', None)
             if checker and checker():
