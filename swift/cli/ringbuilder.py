@@ -925,6 +925,7 @@ swift-ring-builder <builder_file> rebalance [options]
             # zhou: 
             last_balance = builder.get_balance()
             last_dispersion = builder.dispersion
+            # zhou: 
             parts, balance, removed_devs = builder.rebalance(seed=get_seed(3))
             dispersion = builder.dispersion
         except exceptions.RingBuilderError as e:
@@ -1012,6 +1013,8 @@ swift-ring-builder <builder_file> rebalance [options]
             print('-' * 79)
             status = EXIT_WARNING
         ts = time()
+
+        # zhou: RingData.save()
         builder.get_ring().save(
             pathjoin(backup_dir, '%d.' % ts + basename(ring_file)))
         builder.save(pathjoin(backup_dir, '%d.' % ts + basename(builder_file)))

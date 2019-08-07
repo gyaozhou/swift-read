@@ -358,6 +358,7 @@ class RingBuilder(object):
     def set_overload(self, overload):
         self.overload = overload
 
+    # zhou: core data
     def get_ring(self):
         """
         Get the ring, or more specifically, the swift.common.ring.RingData.
@@ -1415,6 +1416,7 @@ class RingBuilder(object):
     def _sort_key_for(dev):
         return (dev['parts_wanted'], random.randint(0, 0xFFFF), dev['id'])
 
+    # zhou: without considering Weight, just get Dispersed Replicas.
     def _build_max_replicas_by_tier(self, bound=math.ceil):
         """
         Returns a defaultdict of (tier: replica_count) for all tiers in the
@@ -1473,17 +1475,20 @@ class RingBuilder(object):
                 # special case for device, it's not recursive
                 replica_count = min(1, replica_count)
             mr = {tier: replica_count}
+            # zhou: key exists in dict.
             if tier in tier2children:
                 subtiers = tier2children[tier]
                 for subtier in subtiers:
+                    # zhou: bound is a parameter, 
                     submax = bound(float(replica_count) / len(subtiers))
                     mr.update(walk_tree(subtier, submax))
             return mr
+        
         mr = defaultdict(float)
         mr.update(walk_tree((), self.replicas))
         return mr
 
-    # zhou: 
+    # zhou: sum for each subtree
     def _build_weighted_replicas_by_tier(self):
         """
         Returns a dict mapping <tier> => replicanths for all tiers in
@@ -1517,13 +1522,13 @@ class RingBuilder(object):
             
         while True:
             # zhou: due to one device can't affort more than 1 replica
-            #       There is maybe some Replica left.
+            #       There is maybe some Replica fractions left.
             remaining = self.replicas - sum(weighted_replicas_for_dev.values())
             if remaining < 1e-10:
                 break
             
             # zhou: iterative to assign remaining to device who can affort more
-            #       until "remaining < 1e-10" or remaining == 0.
+            #       until "remaining == 0" or "remaining < 1e-10".
             #       Some device take 1 replica, which overcommit weight it commit, so
             #       remaining may become 0 after several iteration.
             #       Otherwise, 
@@ -1540,15 +1545,17 @@ class RingBuilder(object):
                 weighted_replicas_for_dev[d] = min(
                     1, weighted_replicas_for_dev[d] * (rel_weight + 1))
 
+        # zhou: get sum for each subtree, includes ()/(region)/(region, zone)/...
         weighted_replicas_by_tier = defaultdict(float)
         for dev in self._iter_devs():
             if not dev['weight']:
                 continue
+            
             assigned_replicanths = weighted_replicas_for_dev[dev['id']]
             dev_tier = (dev['region'], dev['zone'], dev['ip'], dev['id'])
             for i in range(len(dev_tier) + 1):
                 tier = dev_tier[:i]
-                weighted_replicas_by_tier[tier] += assigned_replicanths
+                weighted_replicas_by_tier[tier] += assigned_replicandths
 
         # belts & suspenders/paranoia -  at every level, the sum of
         # weighted_replicas should be very close to the total number of
@@ -1557,6 +1564,7 @@ class RingBuilder(object):
 
         return weighted_replicas_by_tier
 
+    # zhou: README,
     def _build_wanted_replicas_by_tier(self):
         """
         Returns a defaultdict of (tier: replicanths) for all tiers in the ring
@@ -1570,7 +1578,9 @@ class RingBuilder(object):
         not guaranteed to return a fully dispersed solution if failure domains
         are over-weighted for their device count.
         """
+        # zhou: caculate again
         weighted_replicas = self._build_weighted_replicas_by_tier()
+        
         dispersed_replicas = {
             t: {
                 'min': math.floor(r),
@@ -1613,11 +1623,13 @@ class RingBuilder(object):
                 for t in tiers_to_spread:
                     replicas = to_place[t] + (
                         weighted_replicas[t] * rel_weight)
+                    
                     if replicas < dispersed_replicas[t]['min']:
                         replicas = dispersed_replicas[t]['min']
                     elif (replicas > dispersed_replicas[t]['max'] and
                           not device_limited):
                         replicas = dispersed_replicas[t]['max']
+                        
                     if replicas > num_devices[t]:
                         replicas = num_devices[t]
                     to_place[t] = replicas
@@ -1650,6 +1662,8 @@ class RingBuilder(object):
                                   to_place[t], t)
                 place_replicas(t, to_place[t])
 
+        # zhou: end of 'def place_replicas'
+        
         # place all replicas in the cluster tier
         place_replicas((), self.replicas)
 
@@ -1673,11 +1687,13 @@ class RingBuilder(object):
         wanted_replicas = self._build_wanted_replicas_by_tier()
         max_overload = self.get_required_overload(weighted=weighted_replicas,
                                                   wanted=wanted_replicas)
+        
         if max_overload <= 0.0:
             return wanted_replicas
         else:
             overload = min(self.overload, max_overload)
         self.logger.debug("Using effective overload of %f", overload)
+        
         target_replicas = defaultdict(float)
         for tier, weighted in weighted_replicas.items():
             m = (wanted_replicas[tier] - weighted) / max_overload

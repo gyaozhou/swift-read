@@ -141,6 +141,7 @@ def split_policy_string(policy_string):
     return base, policy
 
 
+# zhou: README,
 class BaseStoragePolicy(object):
     """
     Represents a storage policy.  Not meant to be instantiated directly;

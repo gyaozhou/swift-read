@@ -155,7 +155,7 @@ class ProxyOverrideOptions(object):
             'write_affinity_node_count',
             'write_affinity_handoff_delete_count'))
 
-
+# zhou: 
 class Application(object):
     """WSGI application for the proxy server."""
 
@@ -370,6 +370,7 @@ class Application(object):
         """
         return POLICIES.get_object_ring(policy_idx, self.swift_dir)
 
+    # zhou: README,
     def get_controller(self, req):
         """
         Get the controller to handle a request.
@@ -393,6 +394,7 @@ class Application(object):
                  object_name=obj)
         if account and not valid_api_version(version):
             raise APIVersionError('Invalid path')
+        
         if obj and container and account:
             info = get_container_info(req.environ, self)
             policy_index = req.headers.get('X-Backend-Storage-Policy-Index',
@@ -409,6 +411,7 @@ class Application(object):
                 # index - but when there is - it's probably operator
                 # error and hopefully temporary.
                 raise HTTPServiceUnavailable('Unknown Storage Policy')
+            # zhou: README, 
             return self.obj_controller_router[policy], d
         elif container and account:
             return ContainerController, d
@@ -488,6 +491,7 @@ class Application(object):
 
             self.logger.set_statsd_prefix('proxy-server.' +
                                           controller.server_type.lower())
+            # zhou:
             controller = controller(self, **path_parts)
             if 'swift.trans_id' not in req.environ:
                 # if this wasn't set by an earlier middleware, set it now

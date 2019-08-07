@@ -38,6 +38,7 @@ def tiers_for_dev(dev):
     # zhou: Device
     t4 = dev['id']
 
+    # zhou: the reason using (t1,), because (t1) is not a set. (t1,) is a set!!!
     return ((t1,),
             (t1, t2),
             (t1, t2, t3),
@@ -126,10 +127,14 @@ def build_tier_tree(devices):
     :returns: tier tree
 
     """
+    # zhou: the docs show above wrong, the default value type is set, not list.
+    #       Should be like      (): {(1,), (2,)},
     tier2children = defaultdict(set)
     for dev in devices:
         for tier in tiers_for_dev(dev):
             if len(tier) > 1:
+                # zhou: [tier[0:-1]] used to found parent.
+                #       (2, 1, 192.168.201.1) ==> (2, 1)
                 tier2children[tier[0:-1]].add(tier)
             else:
                 tier2children[()].add(tier)
@@ -651,6 +656,7 @@ def dispersion_report(builder, search_filter=None,
     }
 
 
+# zhou: README,
 def validate_replicas_by_tier(replicas, replicas_by_tier):
     """
     Validate the sum of the replicas at each tier.

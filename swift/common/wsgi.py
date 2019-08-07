@@ -575,6 +575,7 @@ def run_server(conf, logger, sock, global_conf=None):
         'capitalize_response_headers': False,
     }
     try:
+        # zhou:  
         wsgi.server(sock, app, wsgi_logger, **server_kwargs)
     except socket.error as err:
         if err[0] != errno.EINVAL:
@@ -993,7 +994,7 @@ class ServersPerPortStrategy(object):
             greenio.shutdown_safe(sock)
             sock.close()
 
-
+# zhou: README,
 def run_wsgi(conf_path, app_section, *args, **kwargs):
     """
     Runs the server according to some strategy.  The default strategy runs a
