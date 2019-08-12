@@ -3547,7 +3547,7 @@ def replication(func):
 
     return func
 
-
+# zhou: otherwise, the HTTP could fake request method.
 def public(func):
     """
     Decorator to declare which methods are publicly accessible as HTTP

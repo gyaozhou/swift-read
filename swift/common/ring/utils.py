@@ -44,7 +44,7 @@ def tiers_for_dev(dev):
             (t1, t2, t3),
             (t1, t2, t3, t4))
 
-
+# zhou: setup device relationship in tree mode.
 def build_tier_tree(devices):
     """
     Construct the tier tree from the zone layout.
@@ -656,7 +656,7 @@ def dispersion_report(builder, search_filter=None,
     }
 
 
-# zhou: README,
+# zhou: make sure each layer in tiers, the sum equal == Replicas.
 def validate_replicas_by_tier(replicas, replicas_by_tier):
     """
     Validate the sum of the replicas at each tier.
@@ -667,7 +667,9 @@ def validate_replicas_by_tier(replicas, replicas_by_tier):
     :param replicas_by_tier: defaultdict,the replicas by tier
     """
     tiers = ['cluster', 'regions', 'zones', 'servers', 'devices']
+    # zhou: (0, cluster), (1, regions), ...
     for i, tier_name in enumerate(tiers):
+
         replicas_at_tier = sum(replicas_by_tier[t] for t in
                                replicas_by_tier if len(t) == i)
         if abs(replicas - replicas_at_tier) > 1e-10:

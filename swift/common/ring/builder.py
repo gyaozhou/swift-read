@@ -108,11 +108,12 @@ class RingBuilder(object):
         self.devs = []
         self.devs_changed = False
         self.version = 0
-        
+        # zhou: administrator set value?
         self.overload = 0.0
         self._id = None
 
-        # zhou: an array of array. 
+        # zhou: an array of array, _replica2part2dev[replica][part]
+        #
         # _replica2part2dev maps from replica number to partition number to
         # device id. So, for a three replica, 2**23 ring, it's an array of
         # three 2**23 arrays of device ids (unsigned shorts). This can work a
@@ -172,6 +173,7 @@ class RingBuilder(object):
     def ever_rebalanced(self):
         return self._replica2part2dev is not None
 
+    # zhou: mark this partition will be moved.
     def _set_part_moved(self, part):
         self._last_part_moves[part] = 0
         byte, bit = divmod(part, 8)
@@ -181,6 +183,7 @@ class RingBuilder(object):
         byte, bit = divmod(part, 8)
         return bool(self._part_moved_bitmap[byte] & (128 >> bit))
 
+    # zhou: too frequently to move a partition.
     def _can_part_move(self, part):
         # if min_part_hours is zero then checking _last_part_moves will not
         # indicate if the part has already moved during the current rebalance,
@@ -208,7 +211,7 @@ class RingBuilder(object):
         elapsed_seconds = int(time() - self._last_part_moves_epoch)
         return max((self.min_part_hours * 3600) - elapsed_seconds, 0)
 
-    # zhou: (Total Partition Number * Replica Number) / Sum Weight of all Device
+    # zhou: (Total Partition Number * Replica Number) / Sum Weight of all Device.
     #       We caculate number of Partition Replica should be stored per Device Weight.
     def weight_of_one_part(self):
         """
@@ -499,7 +502,7 @@ class RingBuilder(object):
         self.devs_changed = True
         self.version += 1
 
-        # zhou: README,
+    # zhou: README,
     def rebalance(self, seed=None):
         """
         Rebalance the ring.
@@ -550,29 +553,34 @@ class RingBuilder(object):
 
         # zhou: context to limit random seed valid for this block code only.
         with _set_random_seed(seed):
-            # zhou: step 1
+            # zhou: step 1, get new replicas by tier.
             replica_plan = self._build_replica_plan()
-            # zhou: step 2
+            # zhou: step 2, get delta partition for each device.
             self._set_parts_wanted(replica_plan)
 
+            # zhou: {Partition Index: [Replica Index]}
             assign_parts = defaultdict(list)
 
-            # zhou: step 3
+            # zhou: step 3, get a dict new Partition or new Replica due to
+            #       Partititon or Replicas changed.
             # gather parts from replica count adjustment
             self._adjust_replica2part2dev_size(assign_parts)
 
-            # zhou: step 4
+            # zhou: step 4, handle device removed by Administrator.
+            #       The {Partition Index: [Replica Index]} migrated from removed
+            #       devices, could also be treat as new(to be assigned parts).
             # gather parts from failed devices
             removed_devs = self._gather_parts_from_failed_devices(assign_parts)
 
-            # zhou: step 5
+            # zhou: step 5, find out existing each Partition related devices, 
+            #       don't break dispersion.
             # gather parts for dispersion (N.B. this only picks up parts that
             # *must* disperse according to the replica plan)
             self._gather_parts_for_dispersion(assign_parts, replica_plan)
 
             # we'll gather a few times, or until we archive the plan
             for gather_count in range(MAX_BALANCE_GATHER_COUNT):
-                # zhou: step 6
+                # zhou: step 6,
                 self._gather_parts_for_balance(assign_parts, replica_plan,
                                                # firsrt attempt go for disperse
                                                gather_count == 0)
@@ -590,7 +598,7 @@ class RingBuilder(object):
                 num_part_replicas = sum(len(r) for p, r in assign_parts_list)
                 self.logger.debug("Gathered %d parts", num_part_replicas)
 
-                # zhou: step 7
+                # zhou: step 7,
                 self._reassign_parts(assign_parts_list, replica_plan)
                 self.logger.debug("Assigned %d parts", num_part_replicas)
 
@@ -830,6 +838,10 @@ class RingBuilder(object):
         balance_per_dev = self._build_balance_per_dev()
         return max(abs(b) for b in balance_per_dev.values())
 
+    
+    # zhou: step 1.2.3, caculate Overload in each device, get the max value.
+    #       It may be positive or negative value.
+    #       max_overload = Max((wanted[tier] - weighted[tier]) / weighted[tier])
     def get_required_overload(self, weighted=None, wanted=None):
         """
         Returns the minimum overload value required to make the ring maximally
@@ -843,7 +855,9 @@ class RingBuilder(object):
         """
         weighted = weighted or self._build_weighted_replicas_by_tier()
         wanted = wanted or self._build_wanted_replicas_by_tier()
+        
         max_overload = 0.0
+        # zhou: only caculate device, the lowest tier.
         for dev in self._iter_devs():
             tier = (dev['region'], dev['zone'], dev['ip'], dev['id'])
             if not dev['weight']:
@@ -852,6 +866,7 @@ class RingBuilder(object):
                 raise exceptions.RingValidationError(
                     'Device %s has zero weight and '
                     'should not want any replicas' % (tier,))
+            
             required = (wanted[tier] - weighted[tier]) / weighted[tier]
             self.logger.debug('%(tier)s wants %(wanted)s and is weighted for '
                               '%(weight)s so therefore requires %(required)s '
@@ -859,6 +874,7 @@ class RingBuilder(object):
                                            'wanted': wanted[tier],
                                            'weight': weighted[tier],
                                            'required': required})
+            
             if required > max_overload:
                 max_overload = required
         return max_overload
@@ -889,7 +905,7 @@ class RingBuilder(object):
                 devices.append(dev)
         return devices
 
-    # zhou: create a iterator? generator?
+    # zhou: create a generator, or iterator.
     def _iter_devs(self):
         """
         Returns an iterator all the non-None devices in the ring. Note that
@@ -901,13 +917,14 @@ class RingBuilder(object):
             if dev is not None:
                 yield dev
 
+    # zhou: build relationship tree for non-zero weight devices.
     def _build_tier2children(self):
         """
         Wrap helper build_tier_tree so exclude zero-weight devices.
         """
         return build_tier_tree(d for d in self._iter_devs() if d['weight'])
 
-    # zhou: README,
+    # zhou: step2, get delta partition for each device.
     def _set_parts_wanted(self, replica_plan):
         """
         Sets the parts_wanted key for each of the devices to the number of
@@ -922,13 +939,18 @@ class RingBuilder(object):
         """
         tier2children = self._build_tier2children()
 
+        # zhou: output
         parts_by_tier = defaultdict(int)
 
+        # zhou: distribute partition
         def place_parts(tier, parts):
             parts_by_tier[tier] = parts
+            
             sub_tiers = sorted(tier2children[tier])
+            # zhou: end of recursive loop.
             if not sub_tiers:
                 return
+            
             to_place = defaultdict(int)
             for t in sub_tiers:
                 to_place[t] = min(parts, int(math.floor(
@@ -946,9 +968,13 @@ class RingBuilder(object):
             for t, p in to_place.items():
                 place_parts(t, p)
 
+        # zhou: end of 'def place_parts()'
+
+        
         total_parts = int(self.replicas * self.parts)
         place_parts((), total_parts)
 
+        # zhou: verification/protection programming.
         # belts & suspenders/paranoia -  at every level, the sum of
         # parts_by_tier should be total_parts for the ring
         tiers = ['cluster', 'regions', 'zones', 'servers', 'devices']
@@ -960,6 +986,8 @@ class RingBuilder(object):
                     '%s != %s at tier %s' % (
                         parts_at_tier, total_parts, tier_name))
 
+        # zhou: get delta value dev['parts_wanted'], comparing to already owns
+        #       partitions number dev['parts'].
         for dev in self._iter_devs():
             if not dev['weight']:
                 # With no weight, that means we wish to "drain" the device. So
@@ -990,7 +1018,8 @@ class RingBuilder(object):
                 self._last_part_moves[part] = 0xff
         self._last_part_moves_epoch = int(time())
 
-    # zhou: README,
+    # zhou: step 4, the {Partition Index: [Replica Index]} migrated from removed
+    #       devices, could also be treat as new(to be assigned parts).
     def _gather_parts_from_failed_devices(self, assign_parts):
         """
         Update the map of partition => [replicas] to be reassigned from
@@ -1001,15 +1030,21 @@ class RingBuilder(object):
         # reassign these partitions. However, we mark them as moved so later
         # choices will skip other replicas of the same partition if possible.
 
+        # zhou: set by 'swift-ring-builder <builder_file> remove'
         if self._remove_devs:
+            # zhou: be removed devices id list and there are Partitions on it.
             dev_ids = [d['id'] for d in self._remove_devs if d['parts']]
             if dev_ids:
                 for part, replica in self._each_part_replica():
                     dev_id = self._replica2part2dev[replica][part]
                     if dev_id in dev_ids:
                         self._replica2part2dev[replica][part] = NONE_DEV
+                        # zhou: update self._part_moved_bitmap
+                        #       clear self._last_part_moves
                         self._set_part_moved(part)
+                        
                         assign_parts[part].append(replica)
+                        
                         self.logger.debug(
                             "Gathered %d/%d from dev %d [dev removed]",
                             part, replica, dev_id)
@@ -1021,7 +1056,8 @@ class RingBuilder(object):
             removed_devs += 1
         return removed_devs
 
-    # zhou: README,
+    # zhou: step 3, get New Partition or New Replicas, in form of
+    #       {Partition Index: [New Replica Index]}
     def _adjust_replica2part2dev_size(self, to_assign):
         """
         Make sure that the lengths of the arrays in _replica2part2dev
@@ -1041,6 +1077,7 @@ class RingBuilder(object):
         removed_parts = 0
         new_parts = 0
 
+        # zhou: desired_lengths = [256, 256, 204]
         desired_lengths = [self.parts] * whole_replicas
         if fractional_replicas:
             desired_lengths.append(int(self.parts * fractional_replicas))
@@ -1049,27 +1086,40 @@ class RingBuilder(object):
             # If we crossed an integer threshold (say, 4.1 --> 4),
             # we'll have a partial extra replica clinging on here. Clean
             # up any such extra stuff.
+            # zhou: for those replicas array will be removed.
             for part2dev in self._replica2part2dev[len(desired_lengths):]:
                 for dev_id in part2dev:
+                    # zhou: number of partitions on this device.
                     dev_losing_part = self.devs[dev_id]
                     dev_losing_part['parts'] -= 1
                     removed_parts -= 1
+                    
+            # zhou: cut down in case replicas reduced, otherwise not change.
             self._replica2part2dev = \
                 self._replica2part2dev[:len(desired_lengths)]
         else:
+            # zhou: first create it.
             self._replica2part2dev = []
 
+
+        # zhou: 'replica' index of replicas, 'desired_length' partitions number.
         for replica, desired_length in enumerate(desired_lengths):
             if replica < len(self._replica2part2dev):
+                # zhou: existing replica index.
                 part2dev = self._replica2part2dev[replica]
+                # zhou: not only replicas number, but also partitions number
+                #       could be increased/reduced also.
                 if len(part2dev) < desired_length:
                     # Not long enough: needs to be extended and the
                     # newly-added pieces assigned to devices.
                     for part in range(len(part2dev), desired_length):
                         to_assign[part].append(replica)
+                        # zhou: list can't use None for a new element, so
+                        #       NONE_DEV = 2 ** 16 - 1
                         part2dev.append(NONE_DEV)
                         new_parts += 1
                 elif len(part2dev) > desired_length:
+                    # zhou: how to handle data on these truncated partitions.
                     # Too long: truncate this mapping.
                     for part in range(desired_length, len(part2dev)):
                         dev_losing_part = self.devs[part2dev[part]]
@@ -1077,11 +1127,14 @@ class RingBuilder(object):
                         removed_parts -= 1
                     self._replica2part2dev[replica] = part2dev[:desired_length]
             else:
+                # zhou: first time to setup, or increse replicas number.
                 # Mapping not present at all: make one up and assign
                 # all of it.
                 for part in range(desired_length):
                     to_assign[part].append(replica)
                     new_parts += 1
+                # zhou: 'H', means array type is unsigned short. The MAX number
+                #       of device Swift support is 2^^16 
                 self._replica2part2dev.append(
                     array('H', itertools.repeat(NONE_DEV, desired_length)))
 
@@ -1089,6 +1142,8 @@ class RingBuilder(object):
             "%d new parts and %d removed parts from replica-count change",
             new_parts, removed_parts)
 
+    # zhou: step 5, find out each partition related devices, don't break dispersion,
+    #       generated at step 1: replica_plan[tier]['max'].
     def _gather_parts_for_dispersion(self, assign_parts, replica_plan):
         """
         Update the map of partition => [replicas] to be reassigned from
@@ -1097,15 +1152,17 @@ class RingBuilder(object):
         # Now we gather partitions that are "at risk" because they aren't
         # currently sufficient spread out across the cluster.
         for part in range(self.parts):
+            # zhou: can not move Partition too frequently.
             if (not self._can_part_move(part)):
                 continue
+            
             # First, add up the count of replicas at each tier for each
             # partition.
             replicas_at_tier = defaultdict(int)
             for dev in self._devs_for_part(part):
                 for tier in dev['tiers']:
                     replicas_at_tier[tier] += 1
-
+            
             # Now, look for partitions not yet spread out enough.
             undispersed_dev_replicas = []
             for replica in self._replicas_for_part(part):
@@ -1113,6 +1170,9 @@ class RingBuilder(object):
                 if dev_id == NONE_DEV:
                     continue
                 dev = self.devs[dev_id]
+                # zhou: 'replicas_at_tier[]' just for this partition.
+                #       In case of all Partition don't break the 'max',
+                #       Unique-As-Possible was obey.
                 if all(replicas_at_tier[tier] <=
                        replica_plan[tier]['max']
                        for tier in dev['tiers']):
@@ -1124,6 +1184,8 @@ class RingBuilder(object):
 
             undispersed_dev_replicas.sort(
                 key=lambda dr: dr[0]['parts_wanted'])
+
+            
             for dev, replica in undispersed_dev_replicas:
                 # the min part hour check is ignored if and only if a device
                 # has more than one replica of a part assigned to it - which
@@ -1135,14 +1197,24 @@ class RingBuilder(object):
                 dev['parts_wanted'] += 1
                 dev['parts'] -= 1
                 assign_parts[part].append(replica)
+                
                 self.logger.debug(
                     "Gathered %d/%d from dev %s [dispersion]",
                     part, replica, pretty_dev(dev))
+                
+                # zhou: how to handle the data of this partition on this device ???
+                #       rebuild it ?
                 self._replica2part2dev[replica][part] = NONE_DEV
+
+                # zhou: without this operation, all replicas of this partition
+                #       will be moved.
                 for tier in dev['tiers']:
                     replicas_at_tier[tier] -= 1
+
+                # zhou: mark this partition to be moved.
                 self._set_part_moved(part)
 
+    # zhou: step 6.1, README,
     def _gather_parts_for_balance_can_disperse(self, assign_parts, start,
                                                replica_plan):
         """
@@ -1217,6 +1289,7 @@ class RingBuilder(object):
                 self._set_part_moved(part)
                 break
 
+    # zhou: step 6, recycle the partitions on overloaded devices.
     def _gather_parts_for_balance(self, assign_parts, replica_plan,
                                   disperse_first):
         """
@@ -1289,6 +1362,9 @@ class RingBuilder(object):
             self._replica2part2dev[replica][part] = NONE_DEV
             self._set_part_moved(part)
 
+    # zhou: step 7, assigned Partitions which collected in first steps to
+    #       available device according to replica_plan.
+    #       README,
     def _reassign_parts(self, reassign_parts, replica_plan):
         """
         For an existing ring data set, partitions are reassigned similar to
@@ -1412,11 +1488,33 @@ class RingBuilder(object):
         for dev in self._iter_devs():
             del dev['sort_key']
 
+            
+            
     @staticmethod
     def _sort_key_for(dev):
         return (dev['parts_wanted'], random.randint(0, 0xFFFF), dev['id'])
 
-    # zhou: without considering Weight, just get Dispersed Replicas.
+    # zhou: step 1.1.2.1, just in rule of unique-as-possible dispersion.
+    #       parameter 'bound' may different.
+    #
+    #       The tier tree would look like,
+    #       e.g replica==3, and all devices weight are same:
+    # {
+    #   (): 3,
+    #   (1,): 3/2,
+    #   (2,): 3/2, 
+    #   (1, 1): 3/4,
+    #   (1, 2): 3/4,
+    #   (2, 1): 3/2,
+    #   (1, 1, 192.168.101.1): 3/8,
+    #   (1, 1, 192.168.101.2): 3/8,
+    #   (1, 2, 192.168.102.1): 3/8,
+    #   (1, 2, 192.168.102.2): 3/8,
+    #   (2, 1, 192.168.201.1): 3/4,
+    #   (2, 1, 192.168.201.2): 3/4
+    # }
+    #       The result is quit different from _build_weighted_replicas_by_tier()
+    #       achieved.
     def _build_max_replicas_by_tier(self, bound=math.ceil):
         """
         Returns a defaultdict of (tier: replica_count) for all tiers in the
@@ -1488,7 +1586,26 @@ class RingBuilder(object):
         mr.update(walk_tree((), self.replicas))
         return mr
 
-    # zhou: sum for each subtree
+    
+    # zhou: step 1.1.1, in rule of device weight and each device no more than 1.
+    #       a dict, key is each tier of tree, value is sum for its subtree.
+    #
+    # The tier tree would look like,
+    # e.g replica==3, and all devices weight are same:
+    # {
+    #   (): 3,
+    #   (1,): 2,
+    #   (2,): 1, 
+    #   (1, 1): 1,
+    #   (1, 2): 1,
+    #   (2, 1): 1,
+    #   (1, 1, 192.168.101.1): 3/6,
+    #   (1, 1, 192.168.101.2): 3/6,
+    #   (1, 2, 192.168.102.1): 3/6,
+    #   (1, 2, 192.168.102.2): 3/6,
+    #   (2, 1, 192.168.201.1): 3/6,
+    #   (2, 1, 192.168.201.2): 3/6
+    # }
     def _build_weighted_replicas_by_tier(self):
         """
         Returns a dict mapping <tier> => replicanths for all tiers in
@@ -1497,16 +1614,18 @@ class RingBuilder(object):
         # zhou: get number of Partition * Replica per Device Weight
         weight_of_one_part = self.weight_of_one_part()
 
-        # assign each device some replicanths by weight (can't be > 1)
         # zhou: dict, device id => Replica percentage.
+        # assign each device some replicanths by weight (can't be > 1)
         weighted_replicas_for_dev = {}
-        # zhou: list, device list with more space to hold more Parttition.
+        
+        # zhou: list, devices which owns spare room (less than 1) to hold more
+        #       Parttition.
         devices_with_room = []
         for dev in self._iter_devs():
             if not dev['weight']:
                 continue
 
-            # zhou: assume total Partition number == 1
+            # zhou: just get Replica
             weighted_replicas = (
                 dev['weight'] * weight_of_one_part / self.parts)
             # zhou: then the "weighted_replicas" should not greater than 1
@@ -1516,7 +1635,7 @@ class RingBuilder(object):
             else:
                 weighted_replicas = 1
 
-            # zhou: each device's Replica percentage.
+            # zhou: each device's Replica, value is a float.
             weighted_replicas_for_dev[dev['id']] = weighted_replicas
 
             
@@ -1524,7 +1643,7 @@ class RingBuilder(object):
             # zhou: due to one device can't affort more than 1 replica
             #       There is maybe some Replica fractions left.
             remaining = self.replicas - sum(weighted_replicas_for_dev.values())
-            if remaining < 1e-10:
+nn            if remaining < 1e-10:
                 break
             
             # zhou: iterative to assign remaining to device who can affort more
@@ -1540,12 +1659,15 @@ class RingBuilder(object):
             # zhou: get percentage of remaining, according device already take.
             rel_weight = remaining / sum(
                 weighted_replicas_for_dev[d] for d in devices_with_room)
+            
             # zhou: new value for each device  = MIN(1, (1 + percentage) * current take).
             for d in devices_with_room:
                 weighted_replicas_for_dev[d] = min(
                     1, weighted_replicas_for_dev[d] * (rel_weight + 1))
 
-        # zhou: get sum for each subtree, includes ()/(region)/(region, zone)/...
+        ########################################################################
+        # zhou: get Replica for each device already, convert to Replica for each tier.
+                
         weighted_replicas_by_tier = defaultdict(float)
         for dev in self._iter_devs():
             if not dev['weight']:
@@ -1553,6 +1675,8 @@ class RingBuilder(object):
             
             assigned_replicanths = weighted_replicas_for_dev[dev['id']]
             dev_tier = (dev['region'], dev['zone'], dev['ip'], dev['id'])
+            # zhou: key pattern, (), (region,), (region, zone), 
+            #       (region, zone, ip), (region, zone, ip, id)
             for i in range(len(dev_tier) + 1):
                 tier = dev_tier[:i]
                 weighted_replicas_by_tier[tier] += assigned_replicandths
@@ -1564,7 +1688,8 @@ class RingBuilder(object):
 
         return weighted_replicas_by_tier
 
-    # zhou: README,
+    # zhou: step 1.1.2, in rule of unique-as-possible dispersion and balance
+    #       between rule weight and unique-as-possible dispersion.
     def _build_wanted_replicas_by_tier(self):
         """
         Returns a defaultdict of (tier: replicanths) for all tiers in the ring
@@ -1580,7 +1705,25 @@ class RingBuilder(object):
         """
         # zhou: caculate again
         weighted_replicas = self._build_weighted_replicas_by_tier()
-        
+
+        # zhou: intermediate variable,
+
+        #       The tier tree would look like,
+        #       e.g replica==3, and all devices weight are same:
+        # {
+        #   (): {min:3, max:3},
+        #   (1,): {min:1, max:2},
+        #   (2,): {min:1, max:2}, 
+        #   (1, 1): {min:0, max:1},
+        #   (1, 2): {min:0, max:1},
+        #   (2, 1): {min:1, max:2},
+        #   (1, 1, 192.168.101.1): {min:0, max:1},
+        #   (1, 1, 192.168.101.2): {min:0, max:1},
+        #   (1, 2, 192.168.102.1): {min:0, max:1},
+        #   (1, 2, 192.168.102.2): {min:0, max:1},
+        #   (2, 1, 192.168.201.1): {min:0, max:1},
+        #   (2, 1, 192.168.201.2): {min:0, max:1}
+        # }
         dispersed_replicas = {
             t: {
                 'min': math.floor(r),
@@ -1589,6 +1732,21 @@ class RingBuilder(object):
             self._build_max_replicas_by_tier(bound=float).items()
         }
 
+        # zhou: device number for each tier.
+        # {
+        #   (): 6,
+        #   (1,): 2,
+        #   (2,): 4,
+        #   (1, 1): 2,
+        #   (1, 2): 2,
+        #   (2, 1): 2,
+        #   (1, 1, 192.168.101.1): 1,
+        #   (1, 1, 192.168.101.2): 1,
+        #   (1, 2, 192.168.102.1): 1,
+        #   (1, 2, 192.168.102.2): 1,
+        #   (2, 1, 192.168.201.1): 1,
+        #   (2, 1, 192.168.201.2): 1
+        # }
         # watch out for device limited tiers
         num_devices = defaultdict(int)
         for d in self._iter_devs():
@@ -1598,28 +1756,39 @@ class RingBuilder(object):
                 num_devices[t] += 1
             num_devices[()] += 1
 
+        # zhou: get relationship tree by tier
         tier2children = self._build_tier2children()
 
+        # zhou: output of balance.
         wanted_replicas = defaultdict(float)
 
+        # zhou: distribute replicas, 
+        #       balance rule weight and unique-as-possible dispersion.
         def place_replicas(tier, replicanths):
             if replicanths > num_devices[tier]:
                 raise exceptions.RingValidationError(
                     'More replicanths (%s) than devices (%s) '
                     'in tier (%s)' % (replicanths, num_devices[tier], tier))
+            
             wanted_replicas[tier] = replicanths
             sub_tiers = sorted(tier2children[tier])
+            
+            # zhou: end of recursive loop.
             if not sub_tiers:
                 return
 
+            # zhou: output
             to_place = defaultdict(float)
             remaining = replicanths
+            # zhou: children
             tiers_to_spread = sub_tiers
+            # zhou: 
             device_limited = False
 
             while True:
                 rel_weight = remaining / sum(weighted_replicas[t]
                                              for t in tiers_to_spread)
+                # zhou: loop of all direct children.
                 for t in tiers_to_spread:
                     replicas = to_place[t] + (
                         weighted_replicas[t] * rel_weight)
@@ -1637,16 +1806,20 @@ class RingBuilder(object):
                 remaining = replicanths - sum(to_place.values())
 
                 if remaining < -1e-10:
+                    # zhou: consinder rule of weight
                     tiers_to_spread = [
                         t for t in sub_tiers
                         if to_place[t] > dispersed_replicas[t]['min']
                     ]
                 elif remaining > 1e-10:
+                    # zhou: consider unique-as-possible if too much remaing.
+                    #       So, Swift prefer to keep Unique-As-Possible.
                     tiers_to_spread = [
                         t for t in sub_tiers
                         if (num_devices[t] > to_place[t] <
                             dispersed_replicas[t]['max'])
                     ]
+                    # zhou: degrade to consider device number < replicas.
                     if not tiers_to_spread:
                         device_limited = True
                         tiers_to_spread = [
@@ -1654,6 +1827,7 @@ class RingBuilder(object):
                             if to_place[t] < num_devices[t]
                         ]
                 else:
+                    # zhou: next recursive loop.
                     # remaining is "empty"
                     break
 
@@ -1662,11 +1836,12 @@ class RingBuilder(object):
                                   to_place[t], t)
                 place_replicas(t, to_place[t])
 
-        # zhou: end of 'def place_replicas'
+        # zhou: end of 'def place_replicas()'
         
         # place all replicas in the cluster tier
         place_replicas((), self.replicas)
 
+        # zhou: verification/protection programming.
         # belts & suspenders/paranoia -  at every level, the sum of
         # wanted_replicas should be very close to the total number of
         # replicas for the ring
@@ -1674,7 +1849,7 @@ class RingBuilder(object):
 
         return wanted_replicas
 
-    # zhou: README,
+    # zhou: step 1.1, 
     def _build_target_replicas_by_tier(self):
         """
         Build a map of <tier> => <target_replicas> accounting for device
@@ -1683,17 +1858,26 @@ class RingBuilder(object):
         <tier> - a tuple, describing each tier in the ring topology
         <target_replicas> - a float, the target replicanths at the tier
         """
+        # zhou: consider Device Weight only.
         weighted_replicas = self._build_weighted_replicas_by_tier()
+        # zhou: consider Uniqeu-As-Possible, then balance with Weight.
         wanted_replicas = self._build_wanted_replicas_by_tier()
+        # zhou: get MAX Overload of each device.
         max_overload = self.get_required_overload(weighted=weighted_replicas,
                                                   wanted=wanted_replicas)
-        
+
+        # zhou: apply administor's overload consideration on wanted plan.
         if max_overload <= 0.0:
+            # zhou: Max value should not be a negative value, 0 is possible.
             return wanted_replicas
         else:
             overload = min(self.overload, max_overload)
+            
         self.logger.debug("Using effective overload of %f", overload)
-        
+
+        # zhou: (wanted_replicas[tier] - weighted) * (overload/max_overload) + weighted
+        #       Reduce the distance between wanted and weighted at same ratio.
+        #       The distance may be positive or negetive.
         target_replicas = defaultdict(float)
         for tier, weighted in weighted_replicas.items():
             m = (wanted_replicas[tier] - weighted) / max_overload
@@ -1706,7 +1890,7 @@ class RingBuilder(object):
 
         return target_replicas
 
-    # zhou: README,
+    # zhou: step 1, build plan.
     def _build_replica_plan(self):
         """
         Wraps return value of _build_target_replicas_by_tier to include
@@ -1723,6 +1907,8 @@ class RingBuilder(object):
         """
         # replica part-y planner!
         target_replicas = self._build_target_replicas_by_tier()
+
+        # zhou: 'max' used by _gather_parts_for_dispersion()
         replica_plan = defaultdict(
             lambda: {'min': 0, 'target': 0, 'max': 0})
         replica_plan.update({
@@ -1735,6 +1921,7 @@ class RingBuilder(object):
         })
         return replica_plan
 
+    # zhou: device who store the replica of this partition.
     def _devs_for_part(self, part):
         """
         Returns a list of devices for a specified partition.
@@ -1753,6 +1940,7 @@ class RingBuilder(object):
             devs.append(self.devs[dev_id])
         return devs
 
+    # zhou: Replica Index for this partition
     def _replicas_for_part(self, part):
         """
         Returns a list of replicas for a specified partition.
@@ -1764,6 +1952,7 @@ class RingBuilder(object):
                 in enumerate(self._replica2part2dev)
                 if part < len(part2dev)]
 
+    # zhou: generator for all (partition, replica) pair.
     def _each_part_replica(self):
         """
         Generator yielding every (partition, replica) pair in the ring.

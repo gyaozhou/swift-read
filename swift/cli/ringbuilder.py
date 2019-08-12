@@ -1471,7 +1471,7 @@ swift-ring-builder <builder_file> finish_increase_partition_power
 
         exit(EXIT_SUCCESS)
 
-
+# zhou: used to handle CLI, swift-ring-builder
 def main(arguments=None):
     global argv, backup_dir, builder, builder_file, ring_file
     if arguments is not None:
@@ -1557,4 +1557,6 @@ def main(arguments=None):
             print("Ring/builder dir currently locked.")
             exit(2)
     else:
+        # zhou: fetch method from class Commands, according to CLI parameter,
+        #       and execute it.
         getattr(Commands, command, Commands.unknown)()
